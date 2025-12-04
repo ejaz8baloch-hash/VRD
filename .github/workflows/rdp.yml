@@ -1,0 +1,55 @@
+name: RDP-Access
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 300   # 5 hours
+
+    steps:
+
+      - name: Enable Remote Desktop + Firewall
+        shell: pwsh
+        run: |
+          Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+          Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 0
+
+          netsh advfirewall firewall set rule group="remote desktop" new enable=yes
+          netsh advfirewall firewall add rule name="AllowRDP" dir=in action=allow protocol=TCP localport=3389
+
+          Write-Host "RDP has been enabled."
+
+      - name: Create RDP User
+        shell: pwsh
+        run: |
+          $password = -join ((33..126) | Get-Random -Count 12 | ForEach-Object {[char]$_})
+          $secure = ConvertTo-SecureString $password -AsPlainText -Force
+
+          New-LocalUser -Name "rdp" -Password $secure -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "rdp"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "rdp"
+
+          echo "RDP_USER=rdp" >> $env:GITHUB_ENV
+          echo "RDP_PASS=$password" >> $env:GITHUB_ENV
+
+      - name: Show RDP Details
+        shell: pwsh
+        run: |
+          $ip = (Invoke-RestMethod -Uri "https://api.ipify.org/?format=json").ip
+          Write-Host "=============================="
+          Write-Host " RDP ENABLED "
+          Write-Host " IP Address: $ip"
+          Write-Host " Username  : $env:RDP_USER"
+          Write-Host " Password  : $env:RDP_PASS"
+          Write-Host "=============================="
+
+      - name: Keep System Alive for RDP (5 hours)
+        shell: pwsh
+        run: |
+          Write-Host "RDP session active. Do NOT close the workflow."
+          while ($true) {
+            Write-Host "Still alive: $(Get-Date)"
+            Start-Sleep -Seconds 60
+          }
