@@ -1,0 +1,91 @@
+name: Install Developer Tools on RDP Machine
+
+on:
+  workflow_dispatch:
+
+jobs:
+  devtools:
+    runs-on: windows-latest
+    timeout-minutes: 180
+
+    steps:
+      # 1. Bring up Tailscale to reach your existing RDP machine
+      - name: Connect to Tailscale
+        run: |
+          Write-Host "=== Connecting to Tailscale Network ==="
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+            --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} `
+            --hostname=devtools-${{ github.run_id }}
+
+          # Wait for IP
+          $tsIP = $null
+          for ($i = 0; $i -lt 10; $i++) {
+            $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+            if ($tsIP) { break }
+            Start-Sleep 4
+          }
+
+          if (-not $tsIP) {
+            Write-Error "No Tailscale IP. Cannot proceed."
+            exit 1
+          }
+
+          echo "TS_IP=$tsIP" >> $env:GITHUB_ENV
+          Write-Host "Connected. Target Machine IP: $tsIP"
+
+      # 2. Install software inside the RDP machine
+      - name: Install Developer Tools
+        run: |
+          Write-Host "=== Installing Developer Tools ==="
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+
+          # Install Chocolatey
+          Write-Host "[1/10] Installing Chocolatey..."
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          refreshenv
+
+          # VS Code
+          Write-Host "[2/10] Installing Visual Studio Code..."
+          choco install vscode -y
+
+          # Git
+          Write-Host "[3/10] Installing Git..."
+          choco install git -y
+
+          # 7zip
+          Write-Host "[4/10] Installing 7zip..."
+          choco install 7zip -y
+
+          # Node.js LTS
+          Write-Host "[5/10] Installing Node.js..."
+          choco install nodejs-lts -y
+
+          # Python
+          Write-Host "[6/10] Installing Python 3..."
+          choco install python -y
+          python -m pip install --upgrade pip
+
+          # Powershell modules
+          Write-Host "[7/10] PowerShell modules..."
+          Install-Module PSReadLine -Force -Scope AllUsers
+          Install-Module Pester -Force -Scope AllUsers
+
+          # Curl, Wget
+          Write-Host "[8/10] Installing wget & curl..."
+          choco install curl wget -y
+
+          # Notepad++ (extra)
+          Write-Host "[9/10] Installing Notepad++..."
+          choco install notepadplusplus -y
+
+          Write-Host "=== All Developer Tools Installed Successfully ==="
+
+      # 3. Keep runner alive so you can verify in RDP
+      - name: Keep Alive
+        run: |
+          Write-Host "You can now check your RDP machine at: $env:TS_IP"
+          Write-Host "All tools (VS Code, Git, Python, Node.js, etc.) are installed."
+          while ($true) {
+            Write-Host "[$(Get-Date)] Waiting for your inspection..."
+            Start-Sleep -Seconds 300
+          }
