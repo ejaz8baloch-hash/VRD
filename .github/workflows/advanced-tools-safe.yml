@@ -1,4 +1,4 @@
-name: C-Install-Advanced-Tools (Safe)
+name: setup
 
 on:
   workflow_dispatch:
@@ -6,104 +6,70 @@ on:
 jobs:
   setup:
     runs-on: windows-latest
-    timeout-minutes: 250
 
     steps:
-      - name: Create Tools Directory (safe)
-        shell: powershell
-        run: |
-          if (!(Test-Path "C:\Tools")) {
-            New-Item -ItemType Directory -Path "C:\Tools" -Force | Out-Null
-            Write-Host "Created C:\Tools"
-          } else {
-            Write-Host "C:\Tools already exists — continuing..."
-          }
+    
+    - name: Create Tools Directory (safe)
+      shell: pwsh
+      run: |
+        if (!(Test-Path "C:\Tools")) {
+            New-Item -ItemType Directory -Path "C:\Tools"
+        } else {
+            Write-Host "C:\Tools already exists, continuing..."
+        }
 
-      - name: Ensure Chocolatey + core packages
-        shell: powershell
-        run: |
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+    - name: Ensure Chocolatey + core packages
+      shell: pwsh
+      run: |
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        if (!(Get-Command choco.exe -ErrorAction SilentlyContinue)) {
             Write-Host "Installing Chocolatey..."
+            Set-ExecutionPolicy Bypass -Scope Process -Force; \
+            [System.Net.ServicePointManager]::SecurityProtocol = 3072; \
             iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          } else {
-            Write-Host "Chocolatey already installed."
-          }
-          refreshenv
-          # Install or upgrade core packages (idempotent)
-          choco install -y git python vscode 7zip curl wget || choco upgrade -y git python vscode 7zip curl wget
+        } else {
+            Write-Host "Chocolatey already installed"
+        }
+        choco install git python --yes --force
 
-      - name: Install Python libraries (idempotent)
-        shell: powershell
-        run: |
-          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + $env:PATH
-          python -m pip install --upgrade pip
-          pip install --upgrade ecdsa sympy gmpy2 fastecdsa bit bech32 numpy
+    - name: Install Python libraries (idempotent)
+      shell: pwsh
+      run: |
+        pip install --upgrade pip
+        pip install requests
+        pip install colorama
 
-      - name: Clone Important Repositories (if missing)
-        shell: powershell
-        run: |
-          $tools = "C:\Tools"
-          Set-Location $tools
-          function CloneIfMissing($url, $folder) {
-            if (-not (Test-Path (Join-Path $tools $folder))) {
-              Write-Host "Cloning $folder..."
-              git clone $url $folder
-            } else {
-              Write-Host "$folder already present — skipping clone."
-            }
-          }
+    - name: Clone Important Repositories (if missing)
+      shell: pwsh
+      run: |
+        if (!(Test-Path "C:\Tools\hashcat")) {
+            git clone https://github.com/hashcat/hashcat C:\Tools\hashcat
+        } else {
+            Write-Host "Hashcat repo already exists"
+        }
 
-          CloneIfMissing "https://github.com/JeanLucPons/Kangaroo" "Kangaroo"
-          CloneIfMissing "https://github.com/alexandernst/keyhunt" "keyhunt"
-          CloneIfMissing "https://github.com/brichard19/brainflayer" "brainflayer"
-          CloneIfMissing "https://github.com/phrutis/brainflayer-windows" "brainflayer-windows"
-          CloneIfMissing "https://github.com/brichard19/bitcrack" "bitcrack"
-          CloneIfMissing "https://github.com/gurnec/btcrecover" "btcrecover"
+    - name: Download Hashcat (release)
+      shell: pwsh
+      run: |
+        $url = "https://hashcat.net/files/hashcat-6.2.6.7z"
+        $out = "C:\Tools\hashcat.7z"
+        Invoke-WebRequest -Uri $url -OutFile $out
 
-      - name: Download & Extract Hashcat (if missing)
-        shell: powershell
-        run: |
-          $hashcatDir = "C:\Tools\hashcat"
-          if (!(Test-Path $hashcatDir)) {
-            Write-Host "Downloading hashcat..."
-            $zip = "C:\Tools\hashcat.7z"
-            Invoke-WebRequest -Uri "https://hashcat.net/files/hashcat-6.2.6.7z" -OutFile $zip -UseBasicParsing
-            Write-Host "Extracting hashcat..."
-            7z x $zip -o$hashcatDir | Out-Null
-            Remove-Item $zip -Force
-          } else {
-            Write-Host "hashcat already present — skipping."
-          }
+    - name: GPU Test
+      shell: pwsh
+      run: |
+        Write-Host "Testing GPU... (this will not fail workflow even if no GPU)"
+        try {
+            Get-WmiObject Win32_VideoController
+        } catch {
+            Write-Host "No GPU detected (expected in GitHub Actions)"
+        }
 
-      - name: GPU Probe (safe)
-        shell: powershell
-        continue-on-error: true
-        run: |
-          if (Test-Path "C:\Tools\hashcat\hashcat.exe") {
-            Write-Host "Running hashcat probe..."
-            & "C:\Tools\hashcat\hashcat.exe" -I || Write-Host "GPU probe returned non-zero (not fatal)."
-          } else {
-            Write-Host "hashcat executable not found — skipping GPU probe."
-          }
+    - name: Create Easy Commands
+      shell: pwsh
+      run: |
+        Set-Content -Path "C:\Tools\hc.cmd" -Value 'C:\Tools\hashcat\hashcat.exe'
+        Write-Host "Alias created: hc.cmd"
 
-      - name: Create README with paths (idempotent)
-        shell: powershell
-        run: |
-          $readme = "C:\Tools\README.txt"
-          @(
-            "Tools installed on: C:\Tools",
-            "Kangaroo -> C:\Tools\Kangaroo",
-            "Keyhunt -> C:\Tools\keyhunt",
-            "Brainflayer -> C:\Tools\brainflayer",
-            "Brainflayer-windows -> C:\Tools\brainflayer-windows",
-            "BitCrack -> C:\Tools\bitcrack",
-            "BTCrecover -> C:\Tools\btcrecover",
-            "Hashcat -> C:\Tools\hashcat"
-          ) | Out-File -FilePath $readme -Encoding UTF8
-
-      - name: Done
-        shell: powershell
-        run: |
-          Write-Host "🔥 C-Phase Complete — Advanced Tools installed or verified. Check C:\Tools in RDP."
-          Get-ChildItem C:\Tools | Select-Object Name,PSIsContainer,Length | Format-Table
+    - name: Done
+      run: echo "Setup finished successfully."
