@@ -1,5 +1,5 @@
 name: setup
-on: workflow_dispatch
+on: workflow_dispatch:
 
 jobs:
   setup:
@@ -23,8 +23,8 @@ jobs:
           } else {
             Write-Host "Chocolatey already installed"
           }
-          **refreshenv**   # Key addition: Refreshes the environment to ensure choco is recognized in this session
-          **choco install git python313 --yes**   # Uses the current latest stable Python 3.13 package (avoids old "python3" conflicts)
+          **choco install git python313 --yes**   # Key change 1: Use python313 (latest stable Python 3.13 as of December 2025) to bypass legacy "python3" conflicts
+          **& "C:\ProgramData\chocolatey\bin\refreshenv.cmd"**   # Key change 2: Explicitly call the cmd refreshenv if needed (safe even if PATH already includes choco)
 
       - name: Install Python libraries (idempotent)
         shell: pwsh
