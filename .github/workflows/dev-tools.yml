@@ -27,7 +27,7 @@ jobs:
           **if ($env:Path -notlike "*ProgramData\chocolatey\bin*") {**
           **  $env:Path += ";C:\ProgramData\chocolatey\bin"**
           **}**
-          choco install git python313 --yes   # Using python313 (latest stable as of Dec 2025) to avoid legacy conflicts
+          chocolatey install git python313 --yes   # Using python313 (latest stable as of Dec 2025) to avoid legacy conflicts
 
       - name: Install Python libraries (idempotent)
         shell: pwsh
