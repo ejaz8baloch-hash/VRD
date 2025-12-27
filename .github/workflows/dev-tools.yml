@@ -1,4 +1,4 @@
-name: setup RR
+name: setup R1
 on: workflow_dispatch
 
 jobs:
@@ -23,8 +23,7 @@ jobs:
           } else {
             Write-Host "Chocolatey already installed"
           }
-          **choco install git python313 --yes**   # Key change 1: Use python313 (latest stable Python 3.13 as of December 2025) to bypass legacy "python3" conflicts
-          **& "C:\ProgramData\chocolatey\bin\refreshenv.cmd"**   # Key change 2: Explicitly call the cmd refreshenv if needed (safe even if PATH already includes choco)
+          **choco install git python313 --yes**   # The only change: python313 installs the latest stable Python 3.13 cleanly
 
       - name: Install Python libraries (idempotent)
         shell: pwsh
