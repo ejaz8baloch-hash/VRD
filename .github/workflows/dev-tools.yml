@@ -1,5 +1,5 @@
-name: setup
-on: workflow_dispatch:
+name: setup RR
+on: workflow_dispatch
 
 jobs:
   setup:
