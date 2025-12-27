@@ -1,53 +1,64 @@
-name: Install Developer Tools on RDP Machine
-
-on:
-  workflow_dispatch:
+name: setup
+on: workflow_dispatch:
 
 jobs:
-  devtools:
+  setup:
     runs-on: windows-latest
-    timeout-minutes: 180
-
     steps:
-      - name: Install Tailscale
+      - name: Create Tools Directory (safe)
+        shell: pwsh
         run: |
-          Write-Host "=== Installing Tailscale ==="
-          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale.exe"
-          Start-Process ".\tailscale.exe" -ArgumentList "/quiet" -Wait
-          Write-Host "Tailscale Installed Successfully."
+          if (!(Test-Path "C:\Tools")) { New-Item -ItemType Directory -Path "C:\Tools" }
+          else { Write-Host "C:\Tools already exists, continuing..." }
 
-      - name: Connect to Tailscale
+      - name: Ensure Chocolatey + core packages
+        shell: pwsh
         run: |
-          Write-Host "=== Connecting to Tailscale ==="
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
-            --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} `
-            --hostname=devtools-${{ github.run_id }} `
-            --accept-routes=true `
-            --accept-dns=true
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          if (!(Get-Command choco.exe -ErrorAction SilentlyContinue)) {
+            Write-Host "Installing Chocolatey..."
+            Set-ExecutionPolicy Bypass -Scope Process -Force;
+            [System.Net.ServicePointManager]::SecurityProtocol = 3072;
+            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          } else {
+            Write-Host "Chocolatey already installed"
+          }
+          **choco install git python313 --yes**   # Key change highlighted: Use python313 instead of python to avoid the python3 dependency conflict and 1603 error
 
-          $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-          if (-not $tsIP) { 
-            Write-Error "No Tailscale IP assigned." 
-            exit 1 
+      - name: Install Python libraries (idempotent)
+        shell: pwsh
+        run: |
+          pip install --upgrade pip
+          pip install requests
+          pip install colorama
+
+      - name: Clone Important Repositories (if missing)
+        shell: pwsh
+        run: |
+          if (!(Test-Path "C:\Tools\hashcat")) {
+            git clone https://github.com/hashcat/hashcat C:\Tools\hashcat
+          } else {
+            Write-Host "Hashcat repo already exists"
           }
 
-          echo "TS_IP=$tsIP" >> $env:GITHUB_ENV
-          Write-Host "Connected! IP: $tsIP"
-
-      - name: Install Developer Tools
+      - name: Download Hashcat (release)
+        shell: pwsh
         run: |
-          Write-Host "=== Installing Developer Tools ==="
-          Set-ExecutionPolicy Bypass -Scope Process -Force
+          $url = "https://hashcat.net/files/hashcat-6.2.6.7z"
+          $out = "C:\Tools\hashcat.7z"
+          Invoke-WebRequest -Uri $url -OutFile $out
 
-          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          refreshenv
-
-          choco install vscode git python nodejs-lts 7zip notepadplusplus curl wget -y
-          python -m pip install --upgrade pip
-
-          Write-Host "All tools installed."
-
-      - name: Keep Alive
+      - name: GPU Test
+        shell: pwsh
         run: |
-          Write-Host "All tools installed on your RDP machine $env:TS_IP"
-          while ($true) { Start-Sleep -Seconds 300 }
+          Write-Host "Testing GPU... (this will not fail workflow even if no GPU)"
+          try { Get-WmiObject Win32_VideoController } catch { Write-Host "No GPU detected (expected in GitHub Actions)" }
+
+      - name: Create Easy Commands
+        shell: pwsh
+        run: |
+          Set-Content -Path "C:\Tools\hc.cmd" -Value 'C:\Tools\hashcat\hashcat.exe'
+          Write-Host "Alias created: hc.cmd"
+
+      - name: Done
+        run: echo "Setup finished successfully."
